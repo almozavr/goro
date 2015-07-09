@@ -3,8 +3,9 @@ package com.stanfy.enroscar.goro;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.ServiceConnection;
+import android.os.Handler;
 import android.os.IBinder;
-
+import android.os.Looper;
 import java.util.ArrayList;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
@@ -46,6 +47,9 @@ public abstract class BoundGoro extends Goro implements ServiceConnection {
     /** Protects service instance. */
     private final Object lock = new Object();
 
+    /** Schedule handler for enqueuing postponed Callable-s. */
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
     /** Instance from service. */
     private Goro service;
 
@@ -80,7 +84,11 @@ public abstract class BoundGoro extends Goro implements ServiceConnection {
       synchronized (lock) {
         oneshot = true;
       }
-      GoroService.bind(context, this);
+      handler.postDelayed(new Runnable() {
+        @Override public void run() {
+          GoroService.bind(context, BoundGoroImpl.this);
+        }
+      }, 10);
     }
 
     @Override
@@ -170,8 +178,12 @@ public abstract class BoundGoro extends Goro implements ServiceConnection {
         if (service != null) {
           return service.schedule(queueName, task);
         } else {
-          BoundFuture<T> future = new BoundFuture<>(queueName, task);
-          postponed.add(future);
+          final BoundFuture<T> future = new BoundFuture<>(queueName, task);
+          handler.post(new Runnable() {
+            @Override public void run() {
+              postponed.add(future);
+            }
+          });
           return future;
         }
       }
